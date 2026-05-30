@@ -1,97 +1,53 @@
-import { create } from "zustand";
-import { User } from "@/types";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+"use client";
+import { useState, useEffect } from "react";
+import { useAuthStore } from "@/store/authStore";
+import { Eye, EyeOff } from "lucide-react";
 
-const isDev = process.env.NODE_ENV === "development";
+export default function SellerAuthPage() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const { login, loading, error, init } = useAuthStore();
 
-function setRoleCookie(role: string) {
-  if (typeof document !== "undefined") {
-    const domain = isDev ? "localhost" : ".durrahonline.com";
-    document.cookie = `durra-role=${role};path=/;domain=${domain};max-age=604800;samesite=lax`;
-  }
+  useEffect(() => { init(); }, []);
+
+  const handleLogin = async () => {
+    await login(email, password);
+    window.location.href = "/dashboard";
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #1A0E02, #3D2208 60%, #FAF7F2)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "Tajawal, sans-serif", direction: "rtl" }}>
+      <div style={{ textAlign: "center", marginBottom: 44 }}>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontStyle: "italic", fontSize: 56, fontWeight: 700, color: "#C9A96E", lineHeight: 1 }}>درّة</div>
+        <div style={{ width: 40, height: 1, background: "linear-gradient(90deg, transparent, #C9A96E, transparent)", margin: "14px auto" }} />
+        <div style={{ fontSize: 11, color: "rgba(201,169,110,0.5)", letterSpacing: 4 }}>بوابة المعرِضة</div>
+      </div>
+      <div style={{ width: "100%", maxWidth: 380, background: "#FFFFFF", borderRadius: 24, border: "1px solid #E8DDD0", padding: 28, boxShadow: "0 8px 40px rgba(26,14,2,0.12)" }}>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, color: "#1A0E02", textAlign: "center", marginBottom: 24 }}>تسجيل الدخول</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <input
+            style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: "1.5px solid #E8DDD0", fontSize: 14, fontFamily: "Tajawal, sans-serif", background: "#FAF7F2", color: "#1A0E02", outline: "none", textAlign: "right", direction: "rtl" }}
+            placeholder="البريد الإلكتروني" value={email} onChange={e => setEmail(e.target.value)} type="email"
+          />
+          <div style={{ position: "relative" }}>
+            <input
+              style={{ width: "100%", padding: "14px 16px", borderRadius: 14, border: "1.5px solid #E8DDD0", fontSize: 14, fontFamily: "Tajawal, sans-serif", background: "#FAF7F2", color: "#1A0E02", outline: "none", textAlign: "right", direction: "rtl" }}
+              placeholder="كلمة المرور" value={password} onChange={e => setPassword(e.target.value)}
+              type={showPass ? "text" : "password"} onKeyDown={e => e.key === "Enter" && handleLogin()}
+            />
+            <button onClick={() => setShowPass(!showPass)} style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer" }}>
+              {showPass ? <EyeOff size={16} color="#BFA080" /> : <Eye size={16} color="#BFA080" />}
+            </button>
+          </div>
+          {error && <div style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(192,57,43,0.06)", border: "1px solid rgba(192,57,43,0.15)", fontSize: 13, color: "#9B2518" }}>⚠️ {error}</div>}
+          <button onClick={handleLogin} disabled={loading || !email || !password}
+            style={{ width: "100%", padding: "15px", borderRadius: 14, border: "none", cursor: loading || !email || !password ? "not-allowed" : "pointer", fontFamily: "Tajawal, sans-serif", fontWeight: 700, fontSize: 16, background: !email || !password ? "#F5F0E8" : "linear-gradient(135deg, #C9A96E, #E8D5A3)", color: !email || !password ? "#BFA080" : "#1A0E02", opacity: loading ? 0.7 : 1, transition: "all 0.2s", marginTop: 4 }}>
+            {loading ? "جاري الدخول..." : "دخول"}
+          </button>
+        </div>
+        <div style={{ textAlign: "center", marginTop: 20, fontSize: 11, color: "#BFA080" }}>حسابك يُفعَّل من قِبَل إدارة درّة</div>
+      </div>
+    </div>
+  );
 }
-
-function clearRoleCookie() {
-  if (typeof document !== "undefined") {
-    const domain = isDev ? "localhost" : ".durrahonline.com";
-    document.cookie = `durra-role=;path=/;domain=${domain};max-age=0`;
-  }
-}
-
-let initialized = false;
-
-interface AuthStore {
-  user: User | null; loading: boolean; error: string | null;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string, phone: string) => Promise<void>;
-  logout: () => Promise<void>;
-  init: () => void;
-}
-
-export const useAuthStore = create<AuthStore>((set) => ({
-  user: null, loading: true, error: null,
-
-  login: async (email, password) => {
-    try {
-      set({ error: null });
-      const result = await signInWithEmailAndPassword(auth, email, password);
-      const snap = await getDoc(doc(db, "users", result.user.uid));
-      const userData = snap.data() as User;
-      set({ user: userData, loading: false });
-      setRoleCookie(userData.role);
-    } catch (e: any) {
-      const msg = e.code === "auth/wrong-password" || e.code === "auth/user-not-found"
-        ? "البريد الإلكتروني أو كلمة المرور غير صحيحة"
-        : e.code === "auth/too-many-requests" ? "محاولات كثيرة — انتظري قليلاً" : e.message;
-      set({ error: msg, loading: false });
-    }
-  },
-
-  register: async (email, password, name, phone) => {
-    try {
-      set({ error: null });
-      const result = await createUserWithEmailAndPassword(auth, email, password);
-      const newUser: User = { uid: result.user.uid, email, displayName: name, phone, role: "customer", createdAt: new Date(), points: 0, level: "normal" };
-      await setDoc(doc(db, "users", result.user.uid), newUser);
-      set({ user: newUser, loading: false });
-      setRoleCookie("customer");
-    } catch (e: any) {
-      const msg = e.code === "auth/email-already-in-use" ? "هذا البريد مسجّل مسبقاً" : e.code === "auth/weak-password" ? "كلمة المرور ضعيفة" : e.message;
-      set({ error: msg, loading: false });
-    }
-  },
-
-  logout: async () => {
-    await signOut(auth);
-    clearRoleCookie();
-    initialized = false;
-    set({ user: null, loading: false });
-    if (typeof window !== "undefined") window.location.href = "/auth";
-  },
-
-  init: () => {
-    if (initialized) return;
-    initialized = true;
-    onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        try {
-          const snap = await getDoc(doc(db, "users", firebaseUser.uid));
-          if (snap.exists()) {
-            const u = snap.data() as User;
-            set({ user: u, loading: false });
-            setRoleCookie(u.role);
-          } else {
-            set({ user: null, loading: false });
-          }
-        } catch {
-          set({ user: null, loading: false });
-        }
-      } else {
-        set({ user: null, loading: false });
-        clearRoleCookie();
-      }
-    });
-  },
-}));
