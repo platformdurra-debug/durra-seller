@@ -6,6 +6,9 @@ import { auth, db } from "@/lib/firebase";
 
 const isDev = process.env.NODE_ENV === "development";
 
+const SELLER_URL = isDev ? "http://localhost:3001" : "https://seller.durrahonline.com";
+const CUSTOMER_URL = isDev ? "http://localhost:3000" : "https://durrahonline.com";
+
 function setRoleCookie(role: string) {
   if (typeof document !== "undefined") {
     const domain = isDev ? "localhost" : ".durrahonline.com";
@@ -35,12 +38,19 @@ export const useAuthStore = create<AuthStore>((set) => ({
 
   login: async (email, password) => {
     try {
-      set({ error: null });
+      set({ error: null, loading: true });
       const result = await signInWithEmailAndPassword(auth, email, password);
       const snap = await getDoc(doc(db, "users", result.user.uid));
       const userData = snap.data() as User;
       set({ user: userData, loading: false });
       setRoleCookie(userData.role);
+
+      // Redirect based on role
+      if (userData.role === "seller") {
+        window.location.replace(`${SELLER_URL}/dashboard`);
+      } else {
+        window.location.replace(CUSTOMER_URL);
+      }
     } catch (e: any) {
       const msg = e.code === "auth/wrong-password" || e.code === "auth/user-not-found"
         ? "البريد الإلكتروني أو كلمة المرور غير صحيحة"
