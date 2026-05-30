@@ -12,8 +12,10 @@ export default function SellerAuthPage() {
   useEffect(() => { init(); }, []);
 
   const handleLogin = async () => {
-    await login(email, password);
-    window.location.href = "https://seller.durrahonline.com/dashboard";
+    try {
+      await login(email, password);
+      window.location.replace("https://seller.durrahonline.com/dashboard");
+    } catch {}
   };
 
   return (
