@@ -46,6 +46,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
         ? "البريد الإلكتروني أو كلمة المرور غير صحيحة"
         : e.code === "auth/too-many-requests" ? "محاولات كثيرة — انتظري قليلاً" : e.message;
       set({ error: msg, loading: false });
+      throw new Error(msg);
     }
   },
 
