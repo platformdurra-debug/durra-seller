@@ -5,9 +5,13 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 
 const isDev = process.env.NODE_ENV === "development";
-
-const SELLER_URL = isDev ? "http://localhost:3001" : "https://seller.durrahonline.com";
-const CUSTOMER_URL = isDev ? "http://localhost:3000" : "https://durrahonline.com";
+const APPS: Record<string, string> = {
+  customer:  isDev ? "http://localhost:3000" : "https://durrahonline.com",
+  seller:    isDev ? "http://localhost:3001" : "https://seller.durrahonline.com",
+  provider:  isDev ? "http://localhost:3002" : "https://provider.durrahonline.com",
+  admin:     isDev ? "http://localhost:3003" : "https://admin.durrahonline.com",
+  warehouse: isDev ? "http://localhost:3004" : "https://warehouse.durrahonline.com",
+};
 
 function setRoleCookie(role: string) {
   if (typeof document !== "undefined") {
@@ -23,10 +27,13 @@ function clearRoleCookie() {
   }
 }
 
-let initialized = false;
+// Module-level unsubscribe — persists across re-renders
+let unsubscribe: (() => void) | null = null;
 
 interface AuthStore {
-  user: User | null; loading: boolean; error: string | null;
+  user: User | null;
+  loading: boolean;
+  error: string | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string, phone: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -34,7 +41,9 @@ interface AuthStore {
 }
 
 export const useAuthStore = create<AuthStore>((set) => ({
-  user: null, loading: false, error: null,
+  user: null,
+  loading: true, // starts true — stays true until onAuthStateChanged fires
+  error: null,
 
   login: async (email, password) => {
     try {
@@ -42,19 +51,19 @@ export const useAuthStore = create<AuthStore>((set) => ({
       const result = await signInWithEmailAndPassword(auth, email, password);
       const snap = await getDoc(doc(db, "users", result.user.uid));
       const userData = snap.data() as User;
-      set({ user: userData, loading: false });
       setRoleCookie(userData.role);
-
-      // Redirect based on role
-      if (userData.role === "seller") {
-        window.location.replace(`${SELLER_URL}/dashboard`);
-      } else {
-        window.location.replace(CUSTOMER_URL);
-      }
+      set({ user: userData, loading: false });
+      const target = userData.role === "seller"
+        ? `${APPS.seller}/dashboard`
+        : (APPS[userData.role] || APPS.customer);
+      window.location.replace(target);
     } catch (e: any) {
-      const msg = e.code === "auth/wrong-password" || e.code === "auth/user-not-found"
-        ? "البريد الإلكتروني أو كلمة المرور غير صحيحة"
-        : e.code === "auth/too-many-requests" ? "محاولات كثيرة — انتظري قليلاً" : e.message;
+      const msg =
+        e.code === "auth/wrong-password" || e.code === "auth/user-not-found"
+          ? "البريد الإلكتروني أو كلمة المرور غير صحيحة"
+          : e.code === "auth/too-many-requests"
+          ? "محاولات كثيرة — انتظري قليلاً"
+          : e.message;
       set({ error: msg, loading: false });
       throw new Error(msg);
     }
@@ -64,35 +73,40 @@ export const useAuthStore = create<AuthStore>((set) => ({
     try {
       set({ error: null });
       const result = await createUserWithEmailAndPassword(auth, email, password);
-      const newUser: User = { uid: result.user.uid, email, displayName: name, phone, role: "customer", createdAt: new Date(), points: 0, level: "normal" };
+      const newUser: User = {
+        uid: result.user.uid, email, displayName: name, phone,
+        role: "customer", createdAt: new Date(), points: 0, level: "normal",
+      };
       await setDoc(doc(db, "users", result.user.uid), newUser);
-      set({ user: newUser, loading: false });
       setRoleCookie("customer");
+      set({ user: newUser, loading: false });
     } catch (e: any) {
-      const msg = e.code === "auth/email-already-in-use" ? "هذا البريد مسجّل مسبقاً" : e.code === "auth/weak-password" ? "كلمة المرور ضعيفة" : e.message;
+      const msg =
+        e.code === "auth/email-already-in-use" ? "هذا البريد مسجّل مسبقاً"
+        : e.code === "auth/weak-password" ? "كلمة المرور ضعيفة"
+        : e.message;
       set({ error: msg, loading: false });
     }
   },
 
   logout: async () => {
+    if (unsubscribe) { unsubscribe(); unsubscribe = null; }
     await signOut(auth);
     clearRoleCookie();
-    initialized = false;
     set({ user: null, loading: false });
     if (typeof window !== "undefined") window.location.href = "/auth";
   },
 
   init: () => {
-    if (initialized) return;
-    initialized = true;
-    onAuthStateChanged(auth, async (firebaseUser) => {
+    if (unsubscribe) return; // already listening
+    unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         try {
           const snap = await getDoc(doc(db, "users", firebaseUser.uid));
           if (snap.exists()) {
             const u = snap.data() as User;
-            set({ user: u, loading: false });
             setRoleCookie(u.role);
+            set({ user: u, loading: false });
           } else {
             set({ user: null, loading: false });
           }
