@@ -13,7 +13,7 @@ export default function SellerAuthPage() {
 
   const handleLogin = async () => {
     await login(email, password);
-    window.location.href = "/dashboard";
+    window.location.href = "https://seller.durrahonline.com/dashboard";
   };
 
   return (
