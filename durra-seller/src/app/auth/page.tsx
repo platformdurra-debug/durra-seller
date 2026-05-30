@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useAuthStore } from "@/store/authStore";
 import { Eye, EyeOff } from "lucide-react";
 
@@ -7,9 +7,7 @@ export default function SellerAuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
-  const { login, loading, error, init } = useAuthStore();
-
-  useEffect(() => { init(); }, []);
+  const { login, loading, error } = useAuthStore();
 
   const handleLogin = async () => {
     try {
