@@ -39,7 +39,17 @@ export default function NewDressPage() {
         await uploadBytes(storageRef, img);
         urls.push(await getDownloadURL(storageRef));
       }
-      await addDoc(collection(db, "dresses"), { name, price: Number(price), category, color, description, size: selectedSizes, images: urls, sellerId: user.uid, sellerName: user.displayName, approved: false, available: true, rating: 0, reviewCount: 0, createdAt: serverTimestamp() });
+      const dressRef = await addDoc(collection(db, "dresses"), { name, price: Number(price), category, color, description, size: selectedSizes, images: urls, sellerId: user.uid, sellerName: user.displayName, approved: false, available: true, rating: 0, reviewCount: 0, createdAt: serverTimestamp() });
+      // إشعار للأدمن
+      await addDoc(collection(db, "notifications"), {
+        userId: "admin",
+        type: "new_dress",
+        title: "👗 فستان جديد ينتظر المراجعة",
+        body: user.displayName + " رفعت فستان جديد: " + name,
+        dressId: dressRef.id,
+        read: false,
+        createdAt: serverTimestamp(),
+      });
       router.push("/dresses");
     } finally { setLoading(false); }
   };
