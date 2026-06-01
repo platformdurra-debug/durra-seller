@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, getDocs, query, where, doc, getDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
@@ -33,6 +33,21 @@ export default function NewDressPage() {
     if (!user || !name || !price || images.length === 0) return;
     setLoading(true);
     try {
+      // ── فحص حد الباقة ──
+      const userSnap = await getDoc(doc(db, "users", user.uid));
+      const planId = userSnap.data()?.plan || "basic";
+      const planSnap = await getDoc(doc(db, "subscriptionPlans", planId));
+      const maxDresses = planSnap.exists() ? (planSnap.data()?.maxDresses ?? -1) : -1;
+
+      if (maxDresses !== -1) {
+        const existing = await getDocs(query(collection(db, "dresses"), where("sellerId", "==", user.uid)));
+        if (existing.size >= maxDresses) {
+          alert(`وصلتِ للحد الأقصى لباقتك (${maxDresses} فساتين). رقّي باقتك لرفع المزيد.`);
+          setLoading(false);
+          return;
+        }
+      }
+
       const urls: string[] = [];
       for (const img of images) {
         const storageRef = ref(storage, `dresses/${user.uid}/${Date.now()}_${img.name}`);
