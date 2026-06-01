@@ -16,7 +16,7 @@ export function middleware(request: NextRequest) {
   if (
     path.startsWith("/_next") || path.startsWith("/api") ||
     path.endsWith(".png") || path.endsWith(".jpg") || path.endsWith(".svg") || path.endsWith(".ico") ||
-    path === "/manifest.json" || path === "/sw.js" || path === "/auth"
+    path === "/manifest.json" || path === "/sw.js" || path === "/auth" || path === "/terms" || path === "/privacy"
   ) return NextResponse.next();
 
   const role = request.cookies.get("durra-role")?.value;
