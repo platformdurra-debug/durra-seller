@@ -1,132 +1,134 @@
 "use client";
-import { useState, useEffect } from "react";
-import { collection, getDocs, query, where, addDoc, serverTimestamp, orderBy, updateDoc, doc } from "firebase/firestore";
+import { useEffect, useState } from "react";
+import { collection, getDocs, query, where, orderBy, updateDoc, doc, deleteDoc, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
-import AdminNav from "@/components/AdminNav";
+import Link from "next/link";
+import SellerNav from "@/components/SellerNav";
 
-export default function AdminNotificationsPage() {
+export default function DressesPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const [tab, setTab] = useState("inbox");
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [target, setTarget] = useState("all");
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [inbox, setInbox] = useState<any[]>([]);
-  const [fetching, setFetching] = useState(true);
+  const [dresses, setDresses] = useState<any[]>([]);
+  const [fetching, setFetching] = useState(false);
+  const [withdrawing, setWithdrawing] = useState<string | null>(null);
 
   useEffect(() => { if (!loading && !user) router.push("/auth"); }, [user, loading]);
-
   useEffect(() => {
-    getDocs(query(collection(db, "notifications"), where("userId", "==", "admin"), orderBy("createdAt", "desc")))
-      .then(snap => { setInbox(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setFetching(false); })
+    if (loading || !user?.uid) return;
+    setFetching(true);
+    getDocs(query(collection(db, "dresses"), where("sellerId", "==", user.uid), orderBy("createdAt", "desc")))
+      .then(snap => { setDresses(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setFetching(false); })
       .catch(() => setFetching(false));
-  }, []);
+  }, [user, loading]);
 
-  const markRead = async (id: string) => {
-    await updateDoc(doc(db, "notifications", id), { read: true });
-    setInbox(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  const toggleAvailable = async (id: string, current: boolean) => {
+    await updateDoc(doc(db, "dresses", id), { available: !current });
+    setDresses(prev => prev.map(d => d.id === id ? { ...d, available: !current } : d));
   };
 
-  const sendNotification = async () => {
-    if (!title || !body) return;
-    setSending(true);
-    let usersSnap;
-    if (target === "all") usersSnap = await getDocs(collection(db, "users"));
-    else usersSnap = await getDocs(query(collection(db, "users"), where("role", "==", target)));
-    const batch = usersSnap.docs.map(u => addDoc(collection(db, "notifications"), { userId: u.id, title, body, read: false, createdAt: serverTimestamp() }));
-    await Promise.all(batch);
-    setSent(true); setSending(false);
-    setTitle(""); setBody("");
-    setTimeout(() => setSent(false), 3000);
+  const withdrawDress = async (dress: any) => {
+    // تحقق: ما في حجوزات نشطة على الفستان
+    const activeBookings = await getDocs(query(
+      collection(db, "bookings"),
+      where("dressId", "==", dress.id),
+      where("status", "in", ["confirmed", "active"])
+    ));
+    if (!activeBookings.empty) {
+      alert("لا يمكن سحب الفستان — يوجد حجز نشط عليه حالياً. انتظري حتى انتهاء الحجز.");
+      return;
+    }
+    if (!confirm("هل تريدين سحب هذا الفستان نهائياً من المنصة؟ سيتم إبلاغ المستودع لإعادته لك.")) return;
+
+    setWithdrawing(dress.id);
+    try {
+      // إشعار للمستودع/الأدمن لإرجاع الفستان
+      await addDoc(collection(db, "notifications"), {
+        userId: "admin",
+        type: "dress_withdrawal",
+        title: "📤 طلب سحب فستان",
+        body: (dress.sellerName || "معرِضة") + " طلبت سحب فستان: " + dress.name,
+        dressId: dress.id,
+        read: false,
+        createdAt: serverTimestamp(),
+      });
+      // احذف الفستان من العرض
+      await deleteDoc(doc(db, "dresses", dress.id));
+      setDresses(prev => prev.filter(d => d.id !== dress.id));
+      alert("تم تقديم طلب السحب. سيتواصل معك المستودع لإعادة الفستان.");
+    } finally {
+      setWithdrawing(null);
+    }
   };
 
-  const TARGETS = [
-    { val: "all",      label: "الكل",       icon: "👥" },
-    { val: "customer", label: "العرايس",    icon: "👰" },
-    { val: "seller",   label: "المعرِضات", icon: "🏪" },
-    { val: "provider", label: "المزودون",   icon: "🌸" },
-  ];
-
-  const TYPE_ICON: Record<string, string> = {
-    new_dress: "👗", new_complaint: "⚠️", new_message: "💬",
-    damage_report: "🔧", new_application: "📋", dress_withdrawal: "📤",
-    new_booking: "🛍️",
-  };
-
-  const unreadCount = inbox.filter(n => !n.read).length;
+  if (loading || fetching) return <div className="loading-screen"><div className="spinner" /></div>;
 
   return (
-    <div className="admin-layout">
-      <AdminNav />
-      <main className="main-content">
-        <div className="page-header">
-          <div className="page-title">الإشعارات</div>
-          <div className="page-subtitle">{unreadCount} إشعار غير مقروء</div>
+    <div className="page-wrap">
+      <div className="page-header">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <Link href="/dresses/new" style={{ textDecoration: "none" }}>
+            <div style={{ padding: "8px 16px", borderRadius: 12, background: "rgba(201,169,110,0.15)", border: "1px solid rgba(201,169,110,0.25)", display: "flex", alignItems: "center", gap: 6 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C9A96E" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#C9A96E", fontFamily: "Tajawal" }}>إضافة</span>
+            </div>
+          </Link>
+          <div className="logo-text">درّة ✦</div>
         </div>
-        <div style={{ padding: "20px" }}>
-          <div className="tabs" style={{ marginBottom: 20 }}>
-            <button className={`tab-btn ${tab === "inbox" ? "active" : ""}`} onClick={() => setTab("inbox")}>الواردة ({unreadCount})</button>
-            <button className={`tab-btn ${tab === "send" ? "active" : ""}`} onClick={() => setTab("send")}>إرسال إشعار</button>
-          </div>
+        <div className="page-title">فساتيني</div>
+        <div className="page-sub">{dresses.length} فستان</div>
+      </div>
 
-          {tab === "inbox" ? (
-            fetching ? <div style={{ textAlign: "center", padding: 40 }}><div className="spinner" /></div> :
-            inbox.length === 0 ? (
-              <div style={{ textAlign: "center", color: "var(--text4)", padding: "40px 0" }}>لا توجد إشعارات واردة</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {inbox.map(n => (
-                  <div key={n.id} className="card" onClick={() => !n.read && markRead(n.id)}
-                    style={{ cursor: "pointer", background: n.read ? undefined : "rgba(201,169,110,0.04)", borderColor: n.read ? undefined : "rgba(201,169,110,0.2)" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <span style={{ fontSize: 11, color: "var(--text4)" }}>
-                        {n.createdAt?.seconds ? new Date(n.createdAt.seconds * 1000).toLocaleDateString("ar-BH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
-                      </span>
-                      <div style={{ textAlign: "right", flex: 1, marginRight: 10 }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
-                          {!n.read && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#C9A96E" }} />}
-                          {n.title}
-                        </div>
-                        <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 4 }}>{n.body}</div>
-                      </div>
-                      <span style={{ fontSize: 18, marginLeft: 8 }}>{TYPE_ICON[n.type] || "🔔"}</span>
-                    </div>
+      <div style={{ padding: "16px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        {dresses.length === 0 ? (
+          <div style={{ gridColumn: "span 2" }} className="empty-state">
+            <div className="empty-text" style={{ marginBottom: 20 }}>لا توجد فساتين بعد</div>
+            <Link href="/dresses/new">
+              <button className="btn-gold" style={{ width: "auto", padding: "12px 28px", borderRadius: 50 }}>أضيفي أول فستان</button>
+            </Link>
+          </div>
+        ) : dresses.map(dress => (
+          <div key={dress.id} style={{ background: "var(--card)", borderRadius: 18, overflow: "hidden", border: "1px solid var(--border)" }}>
+            <div style={{ position: "relative", aspectRatio: "3/4" }}>
+              {dress.images?.[0]
+                ? <img src={dress.images[0]} alt={dress.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                : <div style={{ width: "100%", height: "100%", background: "var(--bg2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--text4)" strokeWidth="1.5" strokeLinecap="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
                   </div>
-                ))}
+              }
+              <div style={{ position: "absolute", top: 8, right: 8 }}>
+                <span className="badge" style={{ background: dress.available ? "rgba(45,138,94,0.15)" : "rgba(192,57,43,0.15)", color: dress.available ? "var(--green)" : "var(--red)", fontSize: 10 }}>
+                  {dress.available ? "متاح" : "محجوز"}
+                </span>
               </div>
-            )
-          ) : (
-            <>
-              {sent && (
-                <div style={{ padding: "14px 18px", borderRadius: 14, background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.2)", marginBottom: 20, textAlign: "center", fontSize: 15, color: "var(--green)", fontWeight: 700 }}>
-                  ✓ تم الإرسال بنجاح!
+              {!dress.approved && (
+                <div style={{ position: "absolute", top: 8, left: 8 }}>
+                  <span className="badge" style={{ background: "rgba(212,136,10,0.15)", color: "var(--yellow)", fontSize: 10 }}>مراجعة</span>
                 </div>
               )}
-              <div className="card">
-                <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 10, textAlign: "right" }}>إرسال لـ</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8, marginBottom: 20 }}>
-                  {TARGETS.map(t => (
-                    <button key={t.val} onClick={() => setTarget(t.val)}
-                      style={{ padding: "10px 6px", borderRadius: 12, border: `1px solid ${target === t.val ? "rgba(201,169,110,0.3)" : "var(--border)"}`, cursor: "pointer", fontFamily: "Tajawal", fontWeight: 600, fontSize: 11, background: target === t.val ? "var(--gold-glow)" : "var(--card)", color: target === t.val ? "var(--gold)" : "var(--text3)", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                      <span style={{ fontSize: 20 }}>{t.icon}</span>
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-                <input className="input" placeholder="عنوان الإشعار" value={title} onChange={e => setTitle(e.target.value)} style={{ marginBottom: 12 }} />
-                <textarea className="input" placeholder="نص الإشعار" value={body} onChange={e => setBody(e.target.value)} style={{ height: 100, resize: "none", marginBottom: 16 }} />
-                <button onClick={sendNotification} disabled={sending || !title || !body} className="btn-gold">
-                  {sending ? "جاري الإرسال..." : "إرسال الإشعار"}
+            </div>
+            <div style={{ padding: "10px 12px" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 4, textAlign: "right" }}>{dress.name}</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "var(--gold3)", textAlign: "right", marginBottom: 10 }}>{dress.price} <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text3)" }}>د.ب</span></div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => toggleAvailable(dress.id, dress.available)}
+                  style={{ flex: 1, padding: "7px 4px", borderRadius: 10, border: "none", cursor: "pointer", fontFamily: "Tajawal", fontWeight: 600, fontSize: 11, background: dress.available ? "rgba(192,57,43,0.08)" : "rgba(45,138,94,0.08)", color: dress.available ? "var(--red)" : "var(--green)" }}>
+                  {dress.available ? "إيقاف" : "تفعيل"}
                 </button>
+                <Link href={`/dresses/${dress.id}`} style={{ flex: 1 }}>
+                  <button style={{ width: "100%", padding: "7px 4px", borderRadius: 10, border: "1px solid var(--border)", cursor: "pointer", fontFamily: "Tajawal", fontWeight: 600, fontSize: 11, background: "transparent", color: "var(--gold3)" }}>تعديل</button>
+                </Link>
               </div>
-            </>
-          )}
-        </div>
-      </main>
+              <button onClick={() => withdrawDress(dress)} disabled={withdrawing === dress.id}
+                style={{ width: "100%", marginTop: 6, padding: "7px 4px", borderRadius: 10, border: "1px solid rgba(192,57,43,0.2)", cursor: "pointer", fontFamily: "Tajawal", fontWeight: 600, fontSize: 11, background: "rgba(192,57,43,0.05)", color: "var(--red)", opacity: withdrawing === dress.id ? 0.6 : 1 }}>
+                {withdrawing === dress.id ? "جاري السحب..." : "🗑️ سحب الفستان"}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <SellerNav />
     </div>
   );
 }
