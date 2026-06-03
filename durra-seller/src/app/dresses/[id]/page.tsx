@@ -3,20 +3,30 @@ import { useEffect, useState } from "react";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useParams, useRouter } from "next/navigation";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function EditDressPage() {
   const { id } = useParams();
   const router = useRouter();
+  const { user } = useAuth();
   const [dress, setDress] = useState<any>(null);
   const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (!user) return;
     getDoc(doc(db, "dresses", id as string)).then(snap => {
-      if (snap.exists()) { const d = snap.data(); setDress(d); setPrice(String(d.price || "")); setDescription(d.description || ""); }
+      if (snap.exists()) {
+        const d = snap.data();
+        // فحص الملكية — لو مو فستانك، ارجعي
+        if (d.sellerId !== user.uid) { router.replace("/dresses"); return; }
+        setDress(d); setPrice(String(d.price || "")); setDescription(d.description || "");
+      } else {
+        router.replace("/dresses");
+      }
     });
-  }, [id]);
+  }, [id, user]);
 
   const save = async () => {
     setSaving(true);
