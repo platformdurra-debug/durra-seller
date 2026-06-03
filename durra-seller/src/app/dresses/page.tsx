@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { collection, getDocs, query, where, orderBy, updateDoc, doc, deleteDoc, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, query, where, orderBy, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
@@ -10,7 +10,9 @@ import SellerNav from "@/components/SellerNav";
 export default function DressesPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const [dresses, setDresses] = useState<any[]>([]);
+  const [tab, setTab] = useState("published");
+  const [dresses, setDresses] = useState<any[]>([]);     // المنشورة
+  const [requests, setRequests] = useState<any[]>([]);   // الطلبات
   const [fetching, setFetching] = useState(false);
   const [withdrawing, setWithdrawing] = useState<string | null>(null);
 
@@ -18,18 +20,17 @@ export default function DressesPage() {
   useEffect(() => {
     if (loading || !user?.uid) return;
     setFetching(true);
-    getDocs(query(collection(db, "dresses"), where("sellerId", "==", user.uid), orderBy("createdAt", "desc")))
-      .then(snap => { setDresses(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setFetching(false); })
-      .catch(() => setFetching(false));
+    Promise.all([
+      getDocs(query(collection(db, "dresses"), where("sellerId", "==", user.uid), orderBy("createdAt", "desc"))),
+      getDocs(query(collection(db, "dressRequests"), where("sellerId", "==", user.uid), orderBy("createdAt", "desc"))),
+    ]).then(([dressSnap, reqSnap]) => {
+      setDresses(dressSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setRequests(reqSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setFetching(false);
+    }).catch(() => setFetching(false));
   }, [user, loading]);
 
-  const toggleAvailable = async (id: string, current: boolean) => {
-    await updateDoc(doc(db, "dresses", id), { available: !current });
-    setDresses(prev => prev.map(d => d.id === id ? { ...d, available: !current } : d));
-  };
-
   const withdrawDress = async (dress: any) => {
-    // تحقق: ما في حجوزات نشطة على الفستان
     const activeBookings = await getDocs(query(
       collection(db, "bookings"),
       where("dressId", "==", dress.id),
@@ -39,11 +40,9 @@ export default function DressesPage() {
       alert("لا يمكن سحب الفستان — يوجد حجز نشط عليه حالياً. انتظري حتى انتهاء الحجز.");
       return;
     }
-    if (!confirm("هل تريدين سحب هذا الفستان نهائياً من المنصة؟ سيتم إبلاغ المستودع لإعادته لك.")) return;
-
+    if (!confirm("هل تريدين طلب سحب هذا الفستان من المنصة؟ سيتم إبلاغ الإدارة لإعادته لك.")) return;
     setWithdrawing(dress.id);
     try {
-      // إشعار للمستودع/الأدمن لإرجاع الفستان
       await addDoc(collection(db, "notifications"), {
         userId: "admin",
         type: "dress_withdrawal",
@@ -53,80 +52,102 @@ export default function DressesPage() {
         read: false,
         createdAt: serverTimestamp(),
       });
-      // احذف الفستان من العرض
-      await deleteDoc(doc(db, "dresses", dress.id));
-      setDresses(prev => prev.filter(d => d.id !== dress.id));
-      alert("تم تقديم طلب السحب. سيتواصل معك المستودع لإعادة الفستان.");
+      alert("تم إرسال طلب السحب للإدارة. سيتم التواصل معك لإعادة الفستان.");
     } finally {
       setWithdrawing(null);
     }
   };
 
-  if (loading || fetching) return <div className="loading-screen"><div className="spinner" /></div>;
+  const STATUS: Record<string, { label: string; color: string; bg: string }> = {
+    pending:  { label: "قيد المراجعة", color: "#92580A", bg: "rgba(212,136,10,0.12)" },
+    rejected: { label: "مرفوض",        color: "#B91C1C", bg: "rgba(239,68,68,0.12)" },
+    approved: { label: "تم النشر",     color: "#1A6B42", bg: "rgba(45,138,94,0.12)" },
+  };
+
+  if (fetching) return (
+    <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ color: "var(--gold)", fontSize: 32 }}>✦</div>
+    </div>
+  );
 
   return (
-    <div className="page-wrap">
-      <div className="page-header">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <Link href="/dresses/new" style={{ textDecoration: "none" }}>
-            <div style={{ padding: "8px 16px", borderRadius: 12, background: "rgba(201,169,110,0.15)", border: "1px solid rgba(201,169,110,0.25)", display: "flex", alignItems: "center", gap: 6 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C9A96E" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#C9A96E", fontFamily: "Tajawal" }}>إضافة</span>
-            </div>
+    <div style={{ minHeight: "100vh", background: "var(--bg)", fontFamily: "Tajawal, sans-serif", direction: "rtl", paddingBottom: 90 }}>
+      <div style={{ padding: "52px 16px 16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <Link href="/dresses/new">
+            <button className="btn-gold" style={{ padding: "10px 18px", fontSize: 13 }}>+ طلب فستان</button>
           </Link>
-          <div className="logo-text">درّة ✦</div>
+          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, color: "var(--text)" }}>فساتيني</div>
         </div>
-        <div className="page-title">فساتيني</div>
-        <div className="page-sub">{dresses.length} فستان</div>
-      </div>
 
-      <div style={{ padding: "16px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        {dresses.length === 0 ? (
-          <div style={{ gridColumn: "span 2" }} className="empty-state">
-            <div className="empty-text" style={{ marginBottom: 20 }}>لا توجد فساتين بعد</div>
-            <Link href="/dresses/new">
-              <button className="btn-gold" style={{ width: "auto", padding: "12px 28px", borderRadius: 50 }}>أضيفي أول فستان</button>
-            </Link>
-          </div>
-        ) : dresses.map(dress => (
-          <div key={dress.id} style={{ background: "var(--card)", borderRadius: 18, overflow: "hidden", border: "1px solid var(--border)" }}>
-            <div style={{ position: "relative", aspectRatio: "3/4" }}>
-              {dress.images?.[0]
-                ? <img src={dress.images[0]} alt={dress.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                : <div style={{ width: "100%", height: "100%", background: "var(--bg2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--text4)" strokeWidth="1.5" strokeLinecap="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        {/* تبويبات */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+          <button onClick={() => setTab("published")}
+            style={{ flex: 1, padding: "10px", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "Tajawal", fontWeight: 700, fontSize: 13, background: tab === "published" ? "linear-gradient(135deg, #C9A96E, #E8D5A3)" : "var(--card)", color: tab === "published" ? "#1A0E02" : "var(--text3)" }}>
+            المنشورة ({dresses.length})
+          </button>
+          <button onClick={() => setTab("requests")}
+            style={{ flex: 1, padding: "10px", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "Tajawal", fontWeight: 700, fontSize: 13, background: tab === "requests" ? "linear-gradient(135deg, #C9A96E, #E8D5A3)" : "var(--card)", color: tab === "requests" ? "#1A0E02" : "var(--text3)" }}>
+            طلباتي ({requests.length})
+          </button>
+        </div>
+
+        {/* المنشورة */}
+        {tab === "published" && (
+          dresses.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "50px 20px", color: "var(--text3)" }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>👗</div>
+              <div style={{ fontSize: 14 }}>لا توجد فساتين منشورة بعد</div>
+              <div style={{ fontSize: 12, marginTop: 6, color: "var(--text4)" }}>قدّمي طلب فستان وبعد موافقة الإدارة يظهر هنا</div>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              {dresses.map(dress => (
+                <div key={dress.id} style={{ background: "var(--card)", borderRadius: 16, border: "1px solid var(--border)", overflow: "hidden" }}>
+                  <img src={dress.images?.[0]} alt={dress.name} style={{ width: "100%", height: 160, objectFit: "cover" }} />
+                  <div style={{ padding: "10px 12px" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 3 }}>{dress.name}</div>
+                    <div style={{ fontSize: 12, color: "var(--gold3)", fontWeight: 700, marginBottom: 8 }}>{dress.price} د.ب / يوم</div>
+                    {dress.rating > 0 && <div style={{ fontSize: 11, color: "#F59E0B", marginBottom: 8 }}>{"★".repeat(Math.round(dress.rating))} <span style={{ color: "var(--text4)" }}>({dress.reviewCount || 0})</span></div>}
+                    <button onClick={() => withdrawDress(dress)} disabled={withdrawing === dress.id}
+                      style={{ width: "100%", padding: "7px 4px", borderRadius: 10, border: "1px solid rgba(192,57,43,0.2)", cursor: "pointer", fontFamily: "Tajawal", fontWeight: 600, fontSize: 11, background: "rgba(192,57,43,0.05)", color: "var(--red)", opacity: withdrawing === dress.id ? 0.6 : 1 }}>
+                      {withdrawing === dress.id ? "..." : "🗑️ طلب سحب"}
+                    </button>
                   </div>
-              }
-              <div style={{ position: "absolute", top: 8, right: 8 }}>
-                <span className="badge" style={{ background: dress.available ? "rgba(45,138,94,0.15)" : "rgba(192,57,43,0.15)", color: dress.available ? "var(--green)" : "var(--red)", fontSize: 10 }}>
-                  {dress.available ? "متاح" : "محجوز"}
-                </span>
-              </div>
-              {!dress.approved && (
-                <div style={{ position: "absolute", top: 8, left: 8 }}>
-                  <span className="badge" style={{ background: "rgba(212,136,10,0.15)", color: "var(--yellow)", fontSize: 10 }}>مراجعة</span>
                 </div>
-              )}
+              ))}
             </div>
-            <div style={{ padding: "10px 12px" }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 4, textAlign: "right" }}>{dress.name}</div>
-              <div style={{ fontSize: 15, fontWeight: 800, color: "var(--gold3)", textAlign: "right", marginBottom: 10 }}>{dress.price} <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text3)" }}>د.ب</span></div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => toggleAvailable(dress.id, dress.available)}
-                  style={{ flex: 1, padding: "7px 4px", borderRadius: 10, border: "none", cursor: "pointer", fontFamily: "Tajawal", fontWeight: 600, fontSize: 11, background: dress.available ? "rgba(192,57,43,0.08)" : "rgba(45,138,94,0.08)", color: dress.available ? "var(--red)" : "var(--green)" }}>
-                  {dress.available ? "إيقاف" : "تفعيل"}
-                </button>
-                <Link href={`/dresses/${dress.id}`} style={{ flex: 1 }}>
-                  <button style={{ width: "100%", padding: "7px 4px", borderRadius: 10, border: "1px solid var(--border)", cursor: "pointer", fontFamily: "Tajawal", fontWeight: 600, fontSize: 11, background: "transparent", color: "var(--gold3)" }}>تعديل</button>
-                </Link>
-              </div>
-              <button onClick={() => withdrawDress(dress)} disabled={withdrawing === dress.id}
-                style={{ width: "100%", marginTop: 6, padding: "7px 4px", borderRadius: 10, border: "1px solid rgba(192,57,43,0.2)", cursor: "pointer", fontFamily: "Tajawal", fontWeight: 600, fontSize: 11, background: "rgba(192,57,43,0.05)", color: "var(--red)", opacity: withdrawing === dress.id ? 0.6 : 1 }}>
-                {withdrawing === dress.id ? "جاري السحب..." : "🗑️ سحب الفستان"}
-              </button>
+          )
+        )}
+
+        {/* الطلبات */}
+        {tab === "requests" && (
+          requests.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "50px 20px", color: "var(--text3)" }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
+              <div style={{ fontSize: 14 }}>لا توجد طلبات</div>
             </div>
-          </div>
-        ))}
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {requests.map(req => {
+                const st = STATUS[req.status] || STATUS.pending;
+                return (
+                  <div key={req.id} style={{ background: "var(--card)", borderRadius: 16, border: "1px solid var(--border)", padding: 12, display: "flex", gap: 12 }}>
+                    <img src={req.images?.[0]} alt={req.name} style={{ width: 70, height: 88, objectFit: "cover", borderRadius: 10, flexShrink: 0 }} />
+                    <div style={{ flex: 1, textAlign: "right" }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>{req.name}</div>
+                      <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 4 }}>السعر المقترح: {req.suggestedPrice} د.ب</div>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 12px", borderRadius: 20, background: st.bg, color: st.color }}>{st.label}</span>
+                      {req.status === "rejected" && req.rejectReason && (
+                        <div style={{ fontSize: 11, color: "var(--red)", marginTop: 6 }}>السبب: {req.rejectReason}</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
       </div>
       <SellerNav />
     </div>
