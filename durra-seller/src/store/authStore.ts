@@ -16,14 +16,14 @@ const APPS: Record<string, string> = {
 function setRoleCookie(role: string) {
   if (typeof document !== "undefined") {
     const domain = isDev ? "localhost" : ".durrahonline.com";
-    document.cookie = `durra-role=${role};path=/;domain=${domain};max-age=604800;samesite=lax`;
+    document.cookie = `durra-role-seller=${role};path=/;domain=${domain};max-age=604800;samesite=lax`;
   }
 }
 
 function clearRoleCookie() {
   if (typeof document !== "undefined") {
     const domain = isDev ? "localhost" : ".durrahonline.com";
-    document.cookie = `durra-role=;path=/;domain=${domain};max-age=0`;
+    document.cookie = `durra-role-seller=;path=/;domain=${domain};max-age=0`;
   }
 }
 
@@ -51,12 +51,15 @@ export const useAuthStore = create<AuthStore>((set) => ({
       const result = await signInWithEmailAndPassword(auth, email, password);
       const snap = await getDoc(doc(db, "users", result.user.uid));
       const userData = snap.data() as User;
-      setRoleCookie(userData.role);
-      set({ user: userData, loading: false });
-      const target = userData.role === "seller"
-        ? `${APPS.seller}/dashboard`
-        : (APPS[userData.role] || APPS.customer);
-      window.location.replace(target);
+      if (userData.role === "seller") {
+        setRoleCookie("seller");
+        set({ user: userData, loading: false });
+        window.location.replace(`${APPS.seller}/dashboard`);
+      } else {
+        // ليست معرِضة — وجّهيها لبوابتها دون كتابة كوكي السيلر
+        set({ user: null, loading: false });
+        window.location.replace(APPS[userData.role] || APPS.customer);
+      }
     } catch (e: any) {
       const msg =
         e.code === "auth/wrong-password" || e.code === "auth/user-not-found"
@@ -105,8 +108,14 @@ export const useAuthStore = create<AuthStore>((set) => ({
           const snap = await getDoc(doc(db, "users", firebaseUser.uid));
           if (snap.exists()) {
             const u = snap.data() as User;
-            setRoleCookie(u.role);
-            set({ user: u, loading: false });
+            // بوابة المعرِضة فقط — لا نكتب الكوكي إلا إذا كان معرِضة
+            if (u.role === "seller") {
+              setRoleCookie("seller");
+              set({ user: u, loading: false });
+            } else {
+              set({ user: null, loading: false });
+              if (typeof window !== "undefined") window.location.replace(APPS[u.role] || APPS.customer);
+            }
           } else {
             set({ user: null, loading: false });
           }
