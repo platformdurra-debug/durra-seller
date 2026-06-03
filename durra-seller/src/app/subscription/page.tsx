@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { doc, getDoc, collection, getDocs } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
@@ -24,7 +24,7 @@ export default function SubscriptionPage() {
     setFetching(true);
     Promise.all([
       getDoc(doc(db, "users", user.uid)),
-      getDocs(collection(db, "subscriptionPlans")),
+      getDocs(query(collection(db, "subscriptionPlans"), where("audience", "==", "seller"))),
     ]).then(([userSnap, plansSnap]) => {
       if (userSnap.exists()) {
         const d = userSnap.data();
