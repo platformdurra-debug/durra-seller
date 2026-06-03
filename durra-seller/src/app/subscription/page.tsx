@@ -7,17 +7,11 @@ import { useRouter } from "next/navigation";
 import { usePayTabs } from "@/hooks/usePayTabs";
 import SellerNav from "@/components/SellerNav";
 
-const DEFAULT_PLANS = [
-  { id: "basic",  label: "أساسية",  price: 10, desc: "للبداية",       features: ["5 فساتين", "إشعارات أساسية", "تقرير شهري"],                        color: "var(--text3)",  popular: false },
-  { id: "gold",   label: "ذهبية",   price: 20, desc: "الأكثر شيوعاً", features: ["20 فستان", "ظهور مميّز", "أولوية الظهور", "تقارير مفصّلة"],          color: "var(--gold3)", popular: true  },
-  { id: "vip",    label: "VIP",     price: 40, desc: "للمحترفات",     features: ["غير محدود", "أعلى الصفحة", "شارة VIP", "دعم أولوية"],                color: "var(--blue)",  popular: false },
-];
-
 export default function SubscriptionPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const { createSession } = usePayTabs();
-  const [plans, setPlans] = useState(DEFAULT_PLANS);
+  const [plans, setPlans] = useState<any[]>([]);
   const [currentPlan, setCurrentPlan] = useState<string>("basic");
   const [subExpiry, setSubExpiry] = useState<string>("");
   const [paying, setPaying] = useState<string | null>(null);
@@ -39,10 +33,8 @@ export default function SubscriptionPage() {
           setSubExpiry(new Date(d.planExpiry.seconds * 1000).toLocaleDateString("ar-BH", { year: "numeric", month: "long", day: "numeric" }));
         }
       }
-      if (!plansSnap.empty) {
-        const fetchedPlans = plansSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-        if (fetchedPlans.length > 0) setPlans(fetchedPlans);
-      }
+      const fetchedPlans = plansSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      setPlans(fetchedPlans);
       setFetching(false);
     }).catch(() => setFetching(false));
   }, [user, loading]);
@@ -102,7 +94,13 @@ export default function SubscriptionPage() {
 
         {/* Plans */}
         <div style={{ display: "flex", flexDirection: "column", gap: 14, paddingBottom: 100 }}>
-          {plans.map(plan => {
+          {plans.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "50px 20px", color: "var(--text3)" }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>📦</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>لا توجد باقات متاحة حالياً</div>
+              <div style={{ fontSize: 13 }}>سيتم إضافة الباقات قريباً</div>
+            </div>
+          ) : plans.map(plan => {
             const isCurrent = plan.id === currentPlan;
             return (
               <div key={plan.id} className="card" style={{ borderColor: plan.popular ? "rgba(201,169,110,0.3)" : isCurrent ? "rgba(45,138,94,0.3)" : undefined, background: plan.popular ? "rgba(201,169,110,0.02)" : undefined, position: "relative", overflow: "hidden" }}>
