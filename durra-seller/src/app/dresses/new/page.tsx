@@ -50,18 +50,25 @@ export default function NewDressPage() {
 
       const urls: string[] = [];
       for (const img of images) {
-        const storageRef = ref(storage, `dresses/${user.uid}/${Date.now()}_${img.name}`);
+        const storageRef = ref(storage, `dressRequests/${user.uid}/${Date.now()}_${img.name}`);
         await uploadBytes(storageRef, img);
         urls.push(await getDownloadURL(storageRef));
       }
-      const dressRef = await addDoc(collection(db, "dresses"), { name, price: Number(price), category, color, description, size: selectedSizes, images: urls, sellerId: user.uid, sellerName: user.displayName, approved: false, available: true, rating: 0, reviewCount: 0, createdAt: serverTimestamp() });
+      // طلب فستان — يُراجع من الإدارة قبل النشر
+      const reqRef = await addDoc(collection(db, "dressRequests"), {
+        name, suggestedPrice: Number(price), category, color, description,
+        size: selectedSizes, images: urls,
+        sellerId: user.uid, sellerName: user.displayName,
+        status: "pending",   // pending / approved / rejected
+        createdAt: serverTimestamp(),
+      });
       // إشعار للأدمن
       await addDoc(collection(db, "notifications"), {
         userId: "admin",
-        type: "new_dress",
-        title: "👗 فستان جديد ينتظر المراجعة",
-        body: user.displayName + " رفعت فستان جديد: " + name,
-        dressId: dressRef.id,
+        type: "dress_request",
+        title: "👗 طلب فستان جديد للمراجعة",
+        body: user.displayName + " قدّمت طلب فستان: " + name,
+        requestId: reqRef.id,
         read: false,
         createdAt: serverTimestamp(),
       });
@@ -75,7 +82,7 @@ export default function NewDressPage() {
         <button onClick={() => router.back()} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text2)" strokeWidth="2" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
-        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, color: "var(--text)" }}>إضافة فستان جديد</div>
+        <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 700, color: "var(--text)" }}>تقديم طلب فستان</div>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -95,7 +102,7 @@ export default function NewDressPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <input className="input" placeholder="اسم الفستان" value={name} onChange={e => setName(e.target.value)} />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <input className="input" placeholder="السعر (د.ب)" value={price} onChange={e => setPrice(e.target.value)} type="number" />
+              <input className="input" placeholder="السعر المقترح (د.ب)" value={price} onChange={e => setPrice(e.target.value)} type="number" />
               <input className="input" placeholder="اللون" value={color} onChange={e => setColor(e.target.value)} />
             </div>
             <input className="input" placeholder="الفئة (زفاف، سهرة...)" value={category} onChange={e => setCategory(e.target.value)} />
@@ -115,7 +122,7 @@ export default function NewDressPage() {
 
         <button onClick={handleSubmit} disabled={loading || !name || !price || images.length === 0} className="btn-gold"
           style={{ opacity: !name || !price || images.length === 0 ? 0.5 : 1 }}>
-          {loading ? "جاري الرفع..." : "رفع الفستان للمراجعة"}
+          {loading ? "جاري الإرسال..." : "تقديم الطلب للمراجعة"}
         </button>
       </div>
     </div>
