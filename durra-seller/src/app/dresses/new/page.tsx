@@ -56,10 +56,16 @@ export default function NewDressPage() {
       }
       // طلب فستان — يُراجع من الإدارة قبل النشر
       const reqRef = await addDoc(collection(db, "dressRequests"), {
-        name, suggestedPrice: Number(price), category, color, description,
-        size: selectedSizes, images: urls,
-        sellerId: user.uid, sellerName: user.displayName,
-        status: "pending",   // pending / approved / rejected
+        name: name || "",
+        suggestedPrice: Number(price) || 0,
+        category: category || "",
+        color: color || "",
+        description: description || "",
+        size: selectedSizes || [],
+        images: urls,
+        sellerId: user.uid,
+        sellerName: user.displayName || "معرِضة",
+        status: "pending",
         createdAt: serverTimestamp(),
       });
       // إشعار للأدمن
@@ -67,7 +73,7 @@ export default function NewDressPage() {
         userId: "admin",
         type: "dress_request",
         title: "👗 طلب فستان جديد للمراجعة",
-        body: user.displayName + " قدّمت طلب فستان: " + name,
+        body: (user.displayName || "معرِضة") + " قدّمت طلب فستان: " + (name || ""),
         requestId: reqRef.id,
         read: false,
         createdAt: serverTimestamp(),
