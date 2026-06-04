@@ -5,16 +5,15 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { usePayTabs } from "@/hooks/usePayTabs";
-import ProviderNav from "@/components/ProviderNav";
+import SellerNav from "@/components/SellerNav";
 
-export default function ProviderSubscriptionPage() {
+export default function SubscriptionPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const { createSession } = usePayTabs();
   const [plans, setPlans] = useState<any[]>([]);
-  const [currentPlan, setCurrentPlan] = useState("basic");
-  const [subExpiry, setSubExpiry] = useState("");
-  const [providerId, setProviderId] = useState("");
+  const [currentPlan, setCurrentPlan] = useState<string>("basic");
+  const [subExpiry, setSubExpiry] = useState<string>("");
   const [paying, setPaying] = useState<string | null>(null);
   const [fetching, setFetching] = useState(false);
 
@@ -24,36 +23,42 @@ export default function ProviderSubscriptionPage() {
     if (loading || !user?.uid) return;
     setFetching(true);
     Promise.all([
-      getDocs(query(collection(db, "providers"), where("ownerId", "==", user.uid))),
-      getDocs(query(collection(db, "subscriptionPlans"), where("audience", "==", "provider"))),
-    ]).then(([provSnap, plansSnap]) => {
-      if (!provSnap.empty) {
-        const d = provSnap.docs[0].data();
-        setProviderId(provSnap.docs[0].id);
+      getDoc(doc(db, "users", user.uid)),
+      getDocs(query(collection(db, "subscriptionPlans"), where("audience", "==", "seller"))),
+    ]).then(([userSnap, plansSnap]) => {
+      if (userSnap.exists()) {
+        const d = userSnap.data();
         setCurrentPlan(d.plan || "basic");
         if (d.planExpiry?.seconds) {
           setSubExpiry(new Date(d.planExpiry.seconds * 1000).toLocaleDateString("ar-BH", { year: "numeric", month: "long", day: "numeric" }));
         }
       }
-      setPlans(plansSnap.docs.map(d => ({ id: d.id, ...d.data() } as any)));
+      const fetchedPlans = plansSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      setPlans(fetchedPlans);
       setFetching(false);
     }).catch(() => setFetching(false));
   }, [user, loading]);
 
   const handleSubscribe = async (plan: any) => {
-    if (!user || plan.id === currentPlan) return;
+    if (!user) return;
+    if (plan.id === currentPlan) return;
     setPaying(plan.id);
     try {
       const session = await createSession({
-        bookingId: `sub_provider_${providerId}_${plan.id}_${Date.now()}`,
+        bookingId: `sub_${user.uid}_${plan.id}_${Date.now()}`,
         amount: plan.price,
         customerName: user.displayName || "عميلة",
         customerEmail: user.email || "",
         customerPhone: user.phone || "",
       });
-      if (session.redirect_url) window.location.href = session.redirect_url;
-    } catch { alert("حدث خطأ، حاول مرة أخرى"); }
-    finally { setPaying(null); }
+      if (session.redirect_url) {
+        window.location.href = session.redirect_url;
+      }
+    } catch {
+      alert("حدث خطأ، حاولي مرة أخرى");
+    } finally {
+      setPaying(null);
+    }
   };
 
   if (loading || fetching) return <div className="loading-screen"><div className="spinner" /></div>;
@@ -62,18 +67,19 @@ export default function ProviderSubscriptionPage() {
     <div className="page-wrap">
       <div className="page-header">
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <div style={{ fontSize: 10, color: "rgba(201,169,110,0.4)", letterSpacing: 2 }}>PROVIDER</div>
+          <div style={{ fontSize: 10, color: "rgba(201,169,110,0.4)", letterSpacing: 2 }}>SELLER</div>
           <div className="logo-text">درّة ✦</div>
         </div>
         <div className="page-title">باقة الاشتراك</div>
-        <div className="page-sub">اختر الباقة المناسبة لمحلك</div>
+        <div className="page-sub">اختاري الباقة المناسبة لمحلك</div>
       </div>
 
       <div style={{ padding: "16px 16px 0" }}>
+
         {/* Current Plan */}
-        <div className="card" style={{ marginBottom: 20, borderColor: "rgba(201,169,110,0.25)" }}>
+        <div className="card" style={{ marginBottom: 20, borderColor: "rgba(201,169,110,0.25)", background: "rgba(201,169,110,0.03)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
+            <div style={{ textAlign: "left" }}>
               {subExpiry && <div style={{ fontSize: 11, color: "var(--text4)" }}>تنتهي: {subExpiry}</div>}
               <div style={{ fontSize: 12, color: "var(--gold3)", fontWeight: 700 }}>
                 {plans.find(p => p.id === currentPlan)?.label || "أساسية"}
@@ -86,6 +92,7 @@ export default function ProviderSubscriptionPage() {
           </div>
         </div>
 
+        {/* Plans */}
         <div style={{ display: "flex", flexDirection: "column", gap: 14, paddingBottom: 100 }}>
           {plans.length === 0 ? (
             <div style={{ textAlign: "center", padding: "50px 20px", color: "var(--text3)" }}>
@@ -96,9 +103,10 @@ export default function ProviderSubscriptionPage() {
           ) : plans.map(plan => {
             const isCurrent = plan.id === currentPlan;
             return (
-              <div key={plan.id} className="card" style={{ borderColor: plan.popular ? "rgba(201,169,110,0.3)" : isCurrent ? "rgba(45,138,94,0.3)" : undefined, position: "relative", overflow: "hidden" }}>
+              <div key={plan.id} className="card" style={{ borderColor: plan.popular ? "rgba(201,169,110,0.3)" : isCurrent ? "rgba(45,138,94,0.3)" : undefined, background: plan.popular ? "rgba(201,169,110,0.02)" : undefined, position: "relative", overflow: "hidden" }}>
                 {plan.popular && !isCurrent && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg, #C9A96E, #E8D5A3)" }} />}
                 {isCurrent && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg, #2D8A5E, #34D399)" }} />}
+
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
                   <div>
                     <div style={{ fontSize: 26, fontWeight: 800, color: isCurrent ? "var(--green)" : plan.color }}>
@@ -112,6 +120,7 @@ export default function ProviderSubscriptionPage() {
                     {plan.popular && !isCurrent && <div style={{ fontSize: 10, color: "var(--gold3)", fontWeight: 700, marginTop: 2 }}>⭐ الأكثر شيوعاً</div>}
                   </div>
                 </div>
+
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
                   {plan.features.map((f: string) => (
                     <div key={f} style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
@@ -120,6 +129,7 @@ export default function ProviderSubscriptionPage() {
                     </div>
                   ))}
                 </div>
+
                 {isCurrent ? (
                   <button disabled className="btn-ghost" style={{ opacity: 0.5, cursor: "not-allowed" }}>باقتك الحالية</button>
                 ) : (
@@ -133,7 +143,7 @@ export default function ProviderSubscriptionPage() {
           })}
         </div>
       </div>
-      <ProviderNav />
+      <SellerNav />
     </div>
   );
 }
