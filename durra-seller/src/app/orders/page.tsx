@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { collection, getDocs, query, where, orderBy } from "firebase/firestore";
+import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
@@ -26,8 +26,8 @@ export default function SellerOrdersPage() {
   useEffect(() => {
     if (loading || !user?.uid) return;
     setFetching(true);
-    getDocs(query(collection(db, "bookings"), where("sellerId", "==", user.uid), orderBy("createdAt", "desc")))
-      .then(snap => { setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setFetching(false); })
+    getDocs(query(collection(db, "bookings"), where("sellerId", "==", user.uid)))
+      .then(snap => { setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))); setFetching(false); })
       .catch(() => setFetching(false));
   }, [user, loading]);
 
