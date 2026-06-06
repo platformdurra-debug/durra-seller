@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { collection, getDocs, query, where, orderBy } from "firebase/firestore";
+import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
@@ -40,7 +40,7 @@ export default function SellerDashboard() {
   useEffect(() => {
     if (loading || !user?.uid) return;
     setFetching(true);
-    getDocs(query(collection(db, "bookings"), where("sellerId", "==", user.uid), orderBy("createdAt", "desc")))
+    getDocs(query(collection(db, "bookings"), where("sellerId", "==", user.uid)))
       .then(snap => {
         const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         const completed = orders.filter((o: any) => o.status === "completed");
