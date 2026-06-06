@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { collection, getDocs, query, where, orderBy, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, query, where, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
@@ -21,13 +21,14 @@ export default function DressesPage() {
     if (loading || !user?.uid) return;
     setFetching(true);
     Promise.all([
-      getDocs(query(collection(db, "dresses"), where("sellerId", "==", user.uid), orderBy("createdAt", "desc"))),
-      getDocs(query(collection(db, "dressRequests"), where("sellerId", "==", user.uid), orderBy("createdAt", "desc"))),
+      getDocs(query(collection(db, "dresses"), where("sellerId", "==", user.uid))),
+      getDocs(query(collection(db, "dressRequests"), where("sellerId", "==", user.uid))),
     ]).then(([dressSnap, reqSnap]) => {
-      setDresses(dressSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setRequests(reqSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const byDate = (a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+      setDresses(dressSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort(byDate));
+      setRequests(reqSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort(byDate));
       setFetching(false);
-    }).catch(() => setFetching(false));
+    }).catch((e) => { console.error(e); setFetching(false); });
   }, [user, loading]);
 
   const withdrawDress = async (dress: any) => {
