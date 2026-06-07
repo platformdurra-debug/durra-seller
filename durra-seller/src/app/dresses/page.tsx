@@ -15,6 +15,10 @@ export default function DressesPage() {
   const [requests, setRequests] = useState<any[]>([]);   // الطلبات
   const [fetching, setFetching] = useState(false);
   const [withdrawing, setWithdrawing] = useState<string | null>(null);
+  const [discountDress, setDiscountDress] = useState<any>(null);
+  const [discountPct, setDiscountPct] = useState("");
+  const [discountReason, setDiscountReason] = useState("");
+  const [sendingDiscount, setSendingDiscount] = useState(false);
 
   useEffect(() => { if (!loading && !user) router.push("/auth"); }, [user, loading]);
   useEffect(() => {
@@ -30,6 +34,36 @@ export default function DressesPage() {
       setFetching(false);
     }).catch((e) => { console.error(e); setFetching(false); });
   }, [user, loading]);
+
+  const requestDiscount = async () => {
+    if (!discountDress || !discountPct) { alert("أدخلي نسبة الخصم"); return; }
+    const pct = Number(discountPct);
+    if (pct < 1 || pct > 90) { alert("النسبة بين 1 و 90"); return; }
+    setSendingDiscount(true);
+    try {
+      await addDoc(collection(db, "discountRequests"), {
+        dressId: discountDress.id,
+        dressName: discountDress.name || "",
+        sellerId: user!.uid,
+        sellerName: user!.displayName || "معرِضة",
+        currentPrice: discountDress.price || 0,
+        discountPct: pct,
+        reason: discountReason || "",
+        status: "pending",
+        createdAt: serverTimestamp(),
+      });
+      await addDoc(collection(db, "notifications"), {
+        userId: "admin",
+        type: "discount_request",
+        title: "🏷️ طلب خصم جديد",
+        body: (user!.displayName || "معرِضة") + " طلبت خصم " + pct + "% على " + (discountDress.name || "فستان"),
+        read: false,
+        createdAt: serverTimestamp(),
+      });
+      alert("تم إرسال طلب الخصم للإدارة ✅");
+      setDiscountDress(null); setDiscountPct(""); setDiscountReason("");
+    } finally { setSendingDiscount(false); }
+  };
 
   const withdrawDress = async (dress: any) => {
     const activeBookings = await getDocs(query(
@@ -110,10 +144,21 @@ export default function DressesPage() {
                     <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 3 }}>{dress.name}</div>
                     <div style={{ fontSize: 12, color: "var(--gold3)", fontWeight: 700, marginBottom: 8 }}>{dress.price} د.ب / يوم</div>
                     {dress.rating > 0 && <div style={{ fontSize: 11, color: "#F59E0B", marginBottom: 8 }}>{"★".repeat(Math.round(dress.rating))} <span style={{ color: "var(--text4)" }}>({dress.reviewCount || 0})</span></div>}
-                    <button onClick={() => withdrawDress(dress)} disabled={withdrawing === dress.id}
-                      style={{ width: "100%", padding: "7px 4px", borderRadius: 10, border: "1px solid rgba(192,57,43,0.2)", cursor: "pointer", fontFamily: "Tajawal", fontWeight: 600, fontSize: 11, background: "rgba(192,57,43,0.05)", color: "var(--red)", opacity: withdrawing === dress.id ? 0.6 : 1 }}>
-                      {withdrawing === dress.id ? "..." : "🗑️ طلب سحب"}
-                    </button>
+                    {dress.discountPct > 0 && (
+                      <div style={{ fontSize: 11, color: "#1A6B42", fontWeight: 700, marginBottom: 6, background: "rgba(45,138,94,0.1)", padding: "4px 8px", borderRadius: 8, textAlign: "center" }}>
+                        🏷️ خصم {dress.discountPct}% نشط
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={() => { setDiscountDress(dress); setDiscountPct(""); setDiscountReason(""); }}
+                        style={{ flex: 1, padding: "7px 4px", borderRadius: 10, border: "1px solid rgba(201,169,110,0.3)", cursor: "pointer", fontFamily: "Tajawal", fontWeight: 600, fontSize: 11, background: "rgba(201,169,110,0.08)", color: "var(--gold3)" }}>
+                        🏷️ طلب خصم
+                      </button>
+                      <button onClick={() => withdrawDress(dress)} disabled={withdrawing === dress.id}
+                        style={{ flex: 1, padding: "7px 4px", borderRadius: 10, border: "1px solid rgba(192,57,43,0.2)", cursor: "pointer", fontFamily: "Tajawal", fontWeight: 600, fontSize: 11, background: "rgba(192,57,43,0.05)", color: "var(--red)", opacity: withdrawing === dress.id ? 0.6 : 1 }}>
+                        {withdrawing === dress.id ? "..." : "🗑️ سحب"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -150,6 +195,35 @@ export default function DressesPage() {
           )
         )}
       </div>
+
+      {/* مودال طلب الخصم */}
+      {discountDress && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setDiscountDress(null)}>
+          <div style={{ background: "var(--card)", borderRadius: 20, padding: 24, maxWidth: 380, width: "100%" }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 4, textAlign: "right" }}>طلب خصم 🏷️</div>
+            <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 16, textAlign: "right" }}>{discountDress.name} — {discountDress.price} د.ب</div>
+
+            <input value={discountPct} onChange={e => setDiscountPct(e.target.value)} type="number" min="1" max="90" placeholder="نسبة الخصم %"
+              style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--bg2)", color: "var(--text)", fontFamily: "Tajawal", fontSize: 14, outline: "none", textAlign: "right", direction: "rtl", marginBottom: 10 }} />
+
+            {discountPct && Number(discountPct) > 0 && Number(discountPct) <= 90 && (
+              <div style={{ fontSize: 12, color: "var(--gold3)", textAlign: "right", marginBottom: 10 }}>
+                السعر بعد الخصم: {Math.round(discountDress.price * (1 - Number(discountPct) / 100))} د.ب
+              </div>
+            )}
+
+            <textarea value={discountReason} onChange={e => setDiscountReason(e.target.value)} placeholder="سبب الخصم (اختياري)"
+              style={{ width: "100%", height: 70, padding: "12px", borderRadius: 12, border: "1px solid var(--border)", background: "var(--bg2)", color: "var(--text)", fontFamily: "Tajawal", fontSize: 13, outline: "none", resize: "none", textAlign: "right", direction: "rtl", marginBottom: 16 }} />
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setDiscountDress(null)} style={{ flex: 1, padding: "12px", borderRadius: 12, border: "1px solid var(--border)", background: "transparent", color: "var(--text3)", cursor: "pointer", fontFamily: "Tajawal", fontWeight: 600 }}>إلغاء</button>
+              <button onClick={requestDiscount} disabled={sendingDiscount} className="btn-gold" style={{ flex: 1, padding: "12px", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "Tajawal", fontWeight: 700, background: "linear-gradient(135deg, #C9A96E, #E8D5A3)", color: "#1A0E02" }}>
+                {sendingDiscount ? "..." : "إرسال الطلب"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <SellerNav />
     </div>
   );
